@@ -76,6 +76,8 @@ textarea{resize:vertical;min-height:68px}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--bl);border-radius:3px}
+.card.dragging,.proj-card.dragging{opacity:.35;transform:scale(.96);box-shadow:none}
+.col-body.drag-over{background:rgba(212,168,83,.05);border-radius:10px;outline:2px dashed var(--gold);outline-offset:3px}
 </style>
 </head>
 <body>
@@ -144,8 +146,8 @@ var sb = {
   del: function(t, id) { return sbFetch(t + '?id=eq.' + encodeURIComponent(id), { method: 'DELETE', prefer: 'return=minimal' }); }
 };
 
-var CC = { todo:'#4f8ef7', inprogress:'#f0a050', waiting:'#f07272', done:'#4caf87', priority:'#d4a853', background:'#9b72f0', parked:'#6b7094' };
-var TC = [{id:'todo',l:'To Do'},{id:'inprogress',l:'In Progress'},{id:'waiting',l:'Waiting'},{id:'done',l:'Done'}];
+var CC = { todo:'#4f8ef7', inprogress:'#f0a050', waiting:'#f07272', done:'#4caf87', dead:'#3d4260', priority:'#d4a853', background:'#9b72f0', parked:'#6b7094' };
+var TC = [{id:'todo',l:'To Do'},{id:'inprogress',l:'In Progress'},{id:'waiting',l:'Waiting'},{id:'done',l:'Done'},{id:'dead',l:'Dead'}];
 var PC = [{id:'priority',l:'Priority'},{id:'background',l:'Background'},{id:'parked',l:'Parked'}];
 
 var tab = 'tasks', tasks = [], projects = [], eid = null, ecol = null;
@@ -210,7 +212,7 @@ function render() {
         '</div>' +
         '<button class="add-btn" onclick="openNew(\'' + col.id + '\')">+</button>' +
       '</div>' +
-      '<div class="col-body">' + cardsHtml + '</div>' +
+      '<div class="col-body" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event,\'' + col.id + '\')">' + cardsHtml + '</div>' +
     '</div>';
   }
   document.getElementById('board').innerHTML = html;
@@ -223,7 +225,7 @@ function renderCard(card, colId, c) {
       if (projects[i].id === card.project) { proj = projects[i]; break; }
     }
     var ownerClass = card.responsible === 'Claude' ? 'claude' : 'marco';
-    return '<div class="card" style="border-left-color:' + c + '" onclick="openEdit(\'' + card.id + '\')">' +
+    return '<div class="card" draggable="true" style="border-left-color:' + c + '" ondragstart="dragStart(event,\'' + card.id + '\')" ondragend="dragEnd(event)" onclick="cardClick(event,\'' + card.id + '\')">' +
       '<div class="card-title">' + esc(card.title) + '</div>' +
       '<div class="tags">' +
         '<span class="pill p-' + ownerClass + '">' + esc(card.responsible || 'Marco') + '</span>' +
@@ -232,7 +234,7 @@ function renderCard(card, colId, c) {
       (card.notes ? '<div class="card-notes">' + esc(card.notes) + '</div>' : '') +
     '</div>';
   } else {
-    return '<div class="proj-card" onclick="openEdit(\'' + card.id + '\')">' +
+    return '<div class="proj-card" draggable="true" ondragstart="dragStart(event,\'' + card.id + '\')" ondragend="dragEnd(event)" onclick="cardClick(event,\'' + card.id + '\')">' +
       '<div class="proj-name">' + esc(card.name) + '</div>' +
       (card.description ? '<div class="proj-desc">' + esc(card.description) + '</div>' : '') +
     '</div>';
@@ -388,6 +390,57 @@ async function delItem() {
     setSyncStatus('err', String.fromCharCode(10005) + ' error');
     alert('Delete failed: ' + e.message);
   }
+}
+
+var dragId = null;
+var didDrag = false;
+
+function dragStart(e, id) {
+  dragId = id;
+  didDrag = true;
+  e.dataTransfer.effectAllowed = 'move';
+  e.target.classList.add('dragging');
+}
+
+function dragEnd(e) {
+  e.target.classList.remove('dragging');
+}
+
+function dragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function dragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function drop(e, colId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!dragId) return;
+  var arr = tab === 'tasks' ? tasks : projects;
+  var item = null;
+  for (var i = 0; i < arr.length; i++) { if (arr[i].id === dragId) { item = arr[i]; break; } }
+  var id = dragId;
+  dragId = null;
+  if (!item || item.column === colId) return;
+  setSyncStatus('loading', 'saving...');
+  try {
+    var tbl = tab === 'tasks' ? 'tasks' : 'projects';
+    await sb.update(tbl, id, { column: colId });
+    item.column = colId;
+    setSyncStatus('ok', String.fromCharCode(9679) + ' live');
+    render();
+  } catch(ex) {
+    setSyncStatus('err', String.fromCharCode(10005) + ' error');
+  }
+}
+
+function cardClick(e, id) {
+  if (didDrag) { didDrag = false; return; }
+  openEdit(id);
 }
 
 load();
