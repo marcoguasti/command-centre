@@ -76,35 +76,321 @@ textarea{resize:vertical;min-height:68px}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--bl);border-radius:3px}
-</style></head><body>
-<div class="header"><div class="logo"><div class="logo-mark">MG</div><span class="logo-text">Command Centre</span><span class="logo-date" id="clock"></span><span class="sync-status sync-loading" id="syncStatus">connecting…</span></div><div class="tabs"><button class="tab active" onclick="switchTab('tasks')" id="ttasks">Tasks</button><button class="tab" onclick="switchTab('projects')" id="tprojects">Projects</button></div></div>
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-mark">MG</div>
+    <span class="logo-text">Command Centre</span>
+    <span class="logo-date" id="clock"></span>
+    <span class="sync-status sync-loading" id="syncStatus">connecting&#x2026;</span>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('tasks')" id="ttasks">Tasks</button>
+    <button class="tab" onclick="switchTab('projects')" id="tprojects">Projects</button>
+  </div>
+</div>
+
 <div id="board" class="board"></div>
-<div id="ov" class="overlay" style="display:none" onclick="handleOv(event)"><div class="modal" onclick="event.stopPropagation()"><div class="modal-head"><span class="modal-t" id="mt">New Task</span><button class="modal-x" onclick="closeModal()">×</button></div><div id="mb"></div><div class="modal-foot"><div><button class="btn btn-d" id="bdel" onclick="delItem()" style="display:none">Delete</button></div><div style="display:flex;gap:8px"><button class="btn btn-g" onclick="closeModal()">Cancel</button><button class="btn btn-p" onclick="saveItem()">Save</button></div></div></div></div>
+
+<div id="ov" class="overlay" style="display:none" onclick="handleOv(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-t" id="mt">New Task</span>
+      <button class="modal-x" onclick="closeModal()">&#x2715;</button>
+    </div>
+    <div id="mb"></div>
+    <div class="modal-foot">
+      <div><button class="btn btn-d" id="bdel" onclick="delItem()" style="display:none">Delete</button></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-p" onclick="saveItem()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-const SUPABASE_URL='https://lvfyiebkvcfstubuovqt.supabase.co';
-const SUPABASE_KEY='sb_publishable_AeyteXvqKEh8ZkWFu6BZpw_fAXbhA5c';
-async function sbFetch(path,opts={}){const res=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':opts.prefer||'return=representation',...(opts.headers||{})}});if(!res.ok){const err=await res.text();throw new Error(err);}const text=await res.text();return text?JSON.parse(text):[];}
-const sb={get:(t,q='')=>sbFetch(t+'?'+q+'&order=created_at.asc'),insert:(t,d)=>sbFetch(t,{method:'POST',body:JSON.stringify(d)}),update:(t,id,d)=>sbFetch(t+'?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(d)}),delete:(t,id)=>sbFetch(t+'?id=eq.'+encodeURIComponent(id),{method:'DELETE',prefer:'return=minimal'})};
-const CC={todo:'#4f8ef7',inprogress:'#f0a050',waiting:'#f07272',done:'#4caf87',priority:'#d4a853',background:'#9b72f0',parked:'#6b7094'};
-const TC=[{id:'todo',l:'To Do'},{id:'inprogress',l:'In Progress'},{id:'waiting',l:'Waiting'},{id:'done',l:'Done'}];
-const PC=[{id:'priority',l:'Priority'},{id:'background',l:'Background'},{id:'parked',l:'Parked'}];
-let tab='tasks',tasks=[],projects=[],eid=null,ecol=null;
-function updateClock(){const d=new Date();const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];document.getElementById('clock').textContent=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];}
+var SUPABASE_URL = 'https://lvfyiebkvcfstubuovqt.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_AeyteXvqKEh8ZkWFu6BZpw_fAXbhA5c';
+
+async function sbFetch(path, opts) {
+  opts = opts || {};
+  var headers = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': opts.prefer || 'return=representation'
+  };
+  if (opts.headers) {
+    Object.keys(opts.headers).forEach(function(k) { headers[k] = opts.headers[k]; });
+  }
+  var res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+    method: opts.method || 'GET',
+    headers: headers,
+    body: opts.body
+  });
+  if (!res.ok) { var err = await res.text(); throw new Error(err); }
+  var text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+var sb = {
+  get: function(t, q) { return sbFetch(t + '?' + (q || '') + '&order=created_at.asc'); },
+  insert: function(t, d) { return sbFetch(t, { method: 'POST', body: JSON.stringify(d) }); },
+  update: function(t, id, d) { return sbFetch(t + '?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(d) }); },
+  del: function(t, id) { return sbFetch(t + '?id=eq.' + encodeURIComponent(id), { method: 'DELETE', prefer: 'return=minimal' }); }
+};
+
+var CC = { todo:'#4f8ef7', inprogress:'#f0a050', waiting:'#f07272', done:'#4caf87', priority:'#d4a853', background:'#9b72f0', parked:'#6b7094' };
+var TC = [{id:'todo',l:'To Do'},{id:'inprogress',l:'In Progress'},{id:'waiting',l:'Waiting'},{id:'done',l:'Done'}];
+var PC = [{id:'priority',l:'Priority'},{id:'background',l:'Background'},{id:'parked',l:'Parked'}];
+
+var tab = 'tasks', tasks = [], projects = [], eid = null, ecol = null;
+
+function updateClock() {
+  var d = new Date();
+  var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('clock').textContent = days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()];
+}
 updateClock();
-function setSyncStatus(state,msg){const el=document.getElementById('syncStatus');el.className='sync-status sync-'+state;el.textContent=msg;}
-async function load(){setSyncStatus('loading','loading…');try{[tasks,projects]=await Promise.all([sb.get('tasks'),sb.get('projects')]);setSyncStatus('ok','● live');render();}catch(e){setSyncStatus('err','✕ offline');console.error('Load error:',e);}}
-function render(){const cols=tab==='tasks'?TC:PC;const items=tab==='tasks'?tasks:projects;document.getElementById('board').innerHTML=cols.map(col=>{const cards=items.filter(i=>i.column===col.id);const c=CC[col.id]||'#6b7094';return '<div class="col"><div class="col-head"><div class="col-meta"><div class="col-dot" style="background:'+c+'"></div><span class="col-name">'+col.l+'</span><span class="col-n">'+cards.length+'</span></div><button class="add-btn" onclick="openNew(''+col.id+'')">+</button></div><div class="col-body">'+(cards.length?cards.map(card=>renderCard(card,col.id,c)).join(''):'<div class="empty">empty</div>')+'</div></div>';}).join('');}
-function renderCard(card,colId,c){if(tab==='tasks'){const proj=projects.find(p=>p.id===card.project);return '<div class="card" style="border-left-color:'+c+'" onclick="openEdit(''+card.id+'')"><div class="card-title">'+esc(card.title)+'</div><div class="tags"><span class="pill p-'+(card.responsible==='Claude'?'claude':'marco')+'">'+esc(card.responsible||'Marco')+'</span>'+(proj?'<span class="pill p-proj" title="'+esc(proj.name)+'">'+esc(proj.name)+'</span>':'')+'</div>'+(card.notes?'<div class="card-notes">'+esc(card.notes)+'</div>':'')+'</div>';}else{return '<div class="proj-card" onclick="openEdit(''+card.id+'')"><div class="proj-name">'+esc(card.name)+'</div>'+(card.description?'<div class="proj-desc">'+esc(card.description)+'</div>':'')+'</div>';}}
-function esc(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function switchTab(t){tab=t;document.getElementById('ttasks').className='tab'+(t==='tasks'?' active':'');document.getElementById('tprojects').className='tab'+(t==='projects'?' active':'');eid=null;render();}
-function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
-function openNew(col){eid=null;ecol=col;document.getElementById('mt').textContent=tab==='tasks'?'New Task':'New Project';document.getElementById('bdel').style.display='none';document.getElementById('mb').innerHTML=tab==='tasks'?taskForm(null,col):projectForm(null,col);document.getElementById('ov').style.display='flex';}
-function openEdit(id){eid=id;const item=(tab==='tasks'?tasks:projects).find(i=>i.id===id);if(!item)return;ecol=item.column;document.getElementById('mt').textContent=tab==='tasks'?'Edit Task':'Edit Project';document.getElementById('bdel').style.display='block';document.getElementById('mb').innerHTML=tab==='tasks'?taskForm(item):projectForm(item);document.getElementById('ov').style.display='flex';}
-function taskForm(t,col){const projOpts=projects.map(p=>'<option value="'+p.id+'"'+(t&&t.project===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('');return '<div class="field"><label>Title</label><input id="fi-title" value="'+(t?esc(t.title):'')+'" placeholder="What needs to be done?"></div><div class="row"><div class="field"><label>Project</label><select id="fi-project"><option value="">— none —</option>'+projOpts+'</select></div><div class="field"><label>Owner</label><select id="fi-responsible"><option value="Marco"'+(!t||t.responsible==='Marco'?' selected':'')+'>Marco</option><option value="Claude"'+(t&&t.responsible==='Claude'?' selected':'')+'>Claude</option></select></div></div><div class="field"><label>Status</label><select id="fi-column">'+TC.map(c=>'<option value="'+c.id+'"'+((t?t.column:col)===c.id?' selected':'')+'>'+c.l+'</option>').join('')+'</select></div><div class="field"><label>Notes</label><textarea id="fi-notes" placeholder="Add context…">'+(t?esc(t.notes||''):'')+'</textarea></div>';}
-function projectForm(p,col){return '<div class="field"><label>Name</label><input id="fi-name" value="'+(p?esc(p.name):'')+'" placeholder="Project name"></div><div class="field"><label>Description</label><textarea id="fi-description" placeholder="What is this project about?">'+(p?esc(p.description||''):'')+'</textarea></div><div class="field"><label>Status</label><select id="fi-column">'+PC.map(c=>'<option value="'+c.id+'"'+((p?p.column:col)===c.id?' selected':'')+'>'+c.l+'</option>').join('')+'</select></div>';}
-function closeModal(){document.getElementById('ov').style.display='none';eid=null;}
-function handleOv(e){if(e.target===document.getElementById('ov'))closeModal();}
-async function saveItem(){setSyncStatus('loading','saving…');try{if(tab==='tasks'){const data={title:document.getElementById('fi-title').value.trim(),project:document.getElementById('fi-project').value||null,responsible:document.getElementById('fi-responsible').value,column:document.getElementById('fi-column').value,notes:document.getElementById('fi-notes').value.trim()||null};if(!data.title)return alert('Title is required');if(eid){await sb.update('tasks',eid,data);tasks=tasks.map(t=>t.id===eid?{...t,...data}:t);}else{data.id=uid();const[created]=await sb.insert('tasks',data);tasks.push(created||{...data});}}else{const data={name:document.getElementById('fi-name').value.trim(),description:document.getElementById('fi-description').value.trim()||null,column:document.getElementById('fi-column').value};if(!data.name)return alert('Name is required');if(eid){await sb.update('projects',eid,data);projects=projects.map(p=>p.id===eid?{...p,...data}:p);}else{data.id=uid();const[created]=await sb.insert('projects',data);projects.push(created||{...data});}}setSyncStatus('ok','● live');closeModal();render();}catch(e){setSyncStatus('err','✕ error');alert('Save failed: '+e.message);}}
-async function delItem(){if(!eid)return;if(!confirm('Delete this item?'))return;setSyncStatus('loading','deleting…');try{if(tab==='tasks'){await sb.delete('tasks',eid);tasks=tasks.filter(t=>t.id!==eid);}else{await sb.delete('projects',eid);projects=projects.filter(p=>p.id!==eid);}setSyncStatus('ok','● live');closeModal();render();}catch(e){setSyncStatus('err','✕ error');alert('Delete failed: '+e.message);}}
+
+function setSyncStatus(state, msg) {
+  var el = document.getElementById('syncStatus');
+  el.className = 'sync-status sync-' + state;
+  el.textContent = msg;
+}
+
+async function load() {
+  setSyncStatus('loading', 'loading...');
+  try {
+    var r = await Promise.all([sb.get('tasks'), sb.get('projects')]);
+    tasks = r[0];
+    projects = r[1];
+    setSyncStatus('ok', String.fromCharCode(9679) + ' live');
+    render();
+  } catch(e) {
+    setSyncStatus('err', String.fromCharCode(10005) + ' offline');
+    console.error('Load error:', e);
+  }
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function render() {
+  var cols = tab === 'tasks' ? TC : PC;
+  var items = tab === 'tasks' ? tasks : projects;
+  var html = '';
+  for (var i = 0; i < cols.length; i++) {
+    var col = cols[i];
+    var c = CC[col.id] || '#6b7094';
+    var cards = [];
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].column === col.id) cards.push(items[j]);
+    }
+    var cardsHtml = '';
+    if (cards.length === 0) {
+      cardsHtml = '<div class="empty">empty</div>';
+    } else {
+      for (var k = 0; k < cards.length; k++) {
+        cardsHtml += renderCard(cards[k], col.id, c);
+      }
+    }
+    html += '<div class="col">' +
+      '<div class="col-head">' +
+        '<div class="col-meta">' +
+          '<div class="col-dot" style="background:' + c + '"></div>' +
+          '<span class="col-name">' + col.l + '</span>' +
+          '<span class="col-n">' + cards.length + '</span>' +
+        '</div>' +
+        '<button class="add-btn" onclick="openNew(\'' + col.id + '\')">+</button>' +
+      '</div>' +
+      '<div class="col-body">' + cardsHtml + '</div>' +
+    '</div>';
+  }
+  document.getElementById('board').innerHTML = html;
+}
+
+function renderCard(card, colId, c) {
+  if (tab === 'tasks') {
+    var proj = null;
+    for (var i = 0; i < projects.length; i++) {
+      if (projects[i].id === card.project) { proj = projects[i]; break; }
+    }
+    var ownerClass = card.responsible === 'Claude' ? 'claude' : 'marco';
+    return '<div class="card" style="border-left-color:' + c + '" onclick="openEdit(\'' + card.id + '\')">' +
+      '<div class="card-title">' + esc(card.title) + '</div>' +
+      '<div class="tags">' +
+        '<span class="pill p-' + ownerClass + '">' + esc(card.responsible || 'Marco') + '</span>' +
+        (proj ? '<span class="pill p-proj" title="' + esc(proj.name) + '">' + esc(proj.name) + '</span>' : '') +
+      '</div>' +
+      (card.notes ? '<div class="card-notes">' + esc(card.notes) + '</div>' : '') +
+    '</div>';
+  } else {
+    return '<div class="proj-card" onclick="openEdit(\'' + card.id + '\')">' +
+      '<div class="proj-name">' + esc(card.name) + '</div>' +
+      (card.description ? '<div class="proj-desc">' + esc(card.description) + '</div>' : '') +
+    '</div>';
+  }
+}
+
+function switchTab(t) {
+  tab = t;
+  document.getElementById('ttasks').className = 'tab' + (t === 'tasks' ? ' active' : '');
+  document.getElementById('tprojects').className = 'tab' + (t === 'projects' ? ' active' : '');
+  eid = null;
+  render();
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+}
+
+function openNew(col) {
+  eid = null;
+  ecol = col;
+  document.getElementById('mt').textContent = tab === 'tasks' ? 'New Task' : 'New Project';
+  document.getElementById('bdel').style.display = 'none';
+  document.getElementById('mb').innerHTML = tab === 'tasks' ? taskForm(null, col) : projectForm(null, col);
+  document.getElementById('ov').style.display = 'flex';
+}
+
+function openEdit(id) {
+  eid = id;
+  var arr = tab === 'tasks' ? tasks : projects;
+  var item = null;
+  for (var i = 0; i < arr.length; i++) { if (arr[i].id === id) { item = arr[i]; break; } }
+  if (!item) return;
+  ecol = item.column;
+  document.getElementById('mt').textContent = tab === 'tasks' ? 'Edit Task' : 'Edit Project';
+  document.getElementById('bdel').style.display = 'block';
+  document.getElementById('mb').innerHTML = tab === 'tasks' ? taskForm(item) : projectForm(item);
+  document.getElementById('ov').style.display = 'flex';
+}
+
+function taskForm(t, col) {
+  var projOpts = '';
+  for (var i = 0; i < projects.length; i++) {
+    var p = projects[i];
+    projOpts += '<option value="' + p.id + '"' + (t && t.project === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+  }
+  var statusOpts = '';
+  for (var i = 0; i < TC.length; i++) {
+    var c = TC[i];
+    statusOpts += '<option value="' + c.id + '"' + ((t ? t.column : col) === c.id ? ' selected' : '') + '>' + c.l + '</option>';
+  }
+  return '<div class="field"><label>Title</label><input id="fi-title" value="' + (t ? esc(t.title) : '') + '" placeholder="What needs to be done?"></div>' +
+    '<div class="row">' +
+      '<div class="field"><label>Project</label><select id="fi-project"><option value="">-- none --</option>' + projOpts + '</select></div>' +
+      '<div class="field"><label>Owner</label><select id="fi-responsible">' +
+        '<option value="Marco"' + (!t || t.responsible === 'Marco' ? ' selected' : '') + '>Marco</option>' +
+        '<option value="Claude"' + (t && t.responsible === 'Claude' ? ' selected' : '') + '>Claude</option>' +
+      '</select></div>' +
+    '</div>' +
+    '<div class="field"><label>Status</label><select id="fi-column">' + statusOpts + '</select></div>' +
+    '<div class="field"><label>Notes</label><textarea id="fi-notes" placeholder="Add context...">' + (t ? esc(t.notes || '') : '') + '</textarea></div>';
+}
+
+function projectForm(p, col) {
+  var statusOpts = '';
+  for (var i = 0; i < PC.length; i++) {
+    var c = PC[i];
+    statusOpts += '<option value="' + c.id + '"' + ((p ? p.column : col) === c.id ? ' selected' : '') + '>' + c.l + '</option>';
+  }
+  return '<div class="field"><label>Name</label><input id="fi-name" value="' + (p ? esc(p.name) : '') + '" placeholder="Project name"></div>' +
+    '<div class="field"><label>Description</label><textarea id="fi-description" placeholder="What is this project about?">' + (p ? esc(p.description || '') : '') + '</textarea></div>' +
+    '<div class="field"><label>Status</label><select id="fi-column">' + statusOpts + '</select></div>';
+}
+
+function closeModal() {
+  document.getElementById('ov').style.display = 'none';
+  eid = null;
+}
+
+function handleOv(e) {
+  if (e.target === document.getElementById('ov')) closeModal();
+}
+
+async function saveItem() {
+  setSyncStatus('loading', 'saving...');
+  try {
+    if (tab === 'tasks') {
+      var data = {
+        title: document.getElementById('fi-title').value.trim(),
+        project: document.getElementById('fi-project').value || null,
+        responsible: document.getElementById('fi-responsible').value,
+        column: document.getElementById('fi-column').value,
+        notes: document.getElementById('fi-notes').value.trim() || null
+      };
+      if (!data.title) { alert('Title is required'); return; }
+      if (eid) {
+        await sb.update('tasks', eid, data);
+        for (var i = 0; i < tasks.length; i++) {
+          if (tasks[i].id === eid) { tasks[i] = Object.assign({}, tasks[i], data); break; }
+        }
+      } else {
+        data.id = uid();
+        var created = await sb.insert('tasks', data);
+        tasks.push(created[0] || data);
+      }
+    } else {
+      var pdata = {
+        name: document.getElementById('fi-name').value.trim(),
+        description: document.getElementById('fi-description').value.trim() || null,
+        column: document.getElementById('fi-column').value
+      };
+      if (!pdata.name) { alert('Name is required'); return; }
+      if (eid) {
+        await sb.update('projects', eid, pdata);
+        for (var i = 0; i < projects.length; i++) {
+          if (projects[i].id === eid) { projects[i] = Object.assign({}, projects[i], pdata); break; }
+        }
+      } else {
+        pdata.id = uid();
+        var created = await sb.insert('projects', pdata);
+        projects.push(created[0] || pdata);
+      }
+    }
+    setSyncStatus('ok', String.fromCharCode(9679) + ' live');
+    closeModal();
+    render();
+  } catch(e) {
+    setSyncStatus('err', String.fromCharCode(10005) + ' error');
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function delItem() {
+  if (!eid) return;
+  if (!confirm('Delete this item?')) return;
+  setSyncStatus('loading', 'deleting...');
+  try {
+    if (tab === 'tasks') {
+      await sb.del('tasks', eid);
+      var newTasks = [];
+      for (var i = 0; i < tasks.length; i++) { if (tasks[i].id !== eid) newTasks.push(tasks[i]); }
+      tasks = newTasks;
+    } else {
+      await sb.del('projects', eid);
+      var newProjects = [];
+      for (var i = 0; i < projects.length; i++) { if (projects[i].id !== eid) newProjects.push(projects[i]); }
+      projects = newProjects;
+    }
+    setSyncStatus('ok', String.fromCharCode(9679) + ' live');
+    closeModal();
+    render();
+  } catch(e) {
+    setSyncStatus('err', String.fromCharCode(10005) + ' error');
+    alert('Delete failed: ' + e.message);
+  }
+}
+
 load();
-</script></body></html>
+</script>
+</body>
+</html>
